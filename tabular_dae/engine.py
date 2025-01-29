@@ -1,6 +1,7 @@
 import torch
 import numpy as np
-import os
+import gc
+import h5py
 from torch.utils.data import DataLoader
 from .network import AutoEncoder, SwapNoiseCorrupter
 from .data import SingleDataset
@@ -148,41 +149,42 @@ def train(network_cfg_or_network,
     return network
 
 
-def featurize(network, data, datatype_info, batch_size, device='cpu', output_file='features.npy'):
+def featurize(network, data, datatype_info, batch_size, device='cuda', output_file='features.h5'):
     ds = SingleDataset(data, datatype_info)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
 
-    # Удаляем файл, если он уже существует
-    if os.path.exists(output_file):
-        os.remove(output_file)
+    # Открываем файл HDF5 для добавления данных
+    with h5py.File(output_file, 'a') as h5f:
+        # Если набора данных еще нет, создаем его
+        if 'features' not in h5f:
+            h5f.create_dataset('features', shape=(0,), maxshape=(None,), chunks=True)
 
-    with torch.no_grad():
-        for i, x in enumerate(dl):
-            for k in x:
-                x[k] = x[k].to(device, non_blocking=True)
+        with torch.no_grad():
+            for i, x in enumerate(dl):
+                for k in x:
+                    x[k] = x[k].to(device, non_blocking=True)
 
-            batch_features = network.featurize(x)
+                batch_features = network.featurize(x)
 
-            # Преобразуем в NumPy
-            batch_features_np = batch_features.detach().cpu().numpy()
+                # Преобразуем в NumPy
+                batch_features_np = batch_features.detach().cpu().numpy()
 
-            # Сохраняем или добавляем данные в файл
-            if i == 0:
-                np.save(output_file, batch_features_np)  # Создаем новый файл для первого батча
-            else:
-                existing_features = np.load(output_file)
-                combined_features = np.vstack((existing_features, batch_features_np))
-                np.save(output_file, combined_features)  # Перезаписываем файл с объединенными данными
+                # Добавляем новые данные в набор данных
+                current_shape = h5f['features'].shape[0]
+                h5f['features'].resize((current_shape + batch_features_np.shape[0],))  # Изменяем размер набора данных
+                h5f['features'][current_shape:] = batch_features_np  # Записываем новые данные
 
-            # Явное удаление объектов после их использования
-            del x
-            del batch_features
+                # Явное удаление объектов после их использования
+                del x
+                del batch_features
 
-            # Освобождение GPU памяти (если используется)
-            if device == 'cuda':
-                torch.cuda.empty_cache()
+    gc.collect()
+
+    # Освобождение GPU памяти (если используется)
+    if device == 'cuda':
+        torch.cuda.empty_cache()
 
     # Загружаем все сохраненные предсказания и возвращаем их
-    features = np.load(output_file)
+    features = np.array(h5f['features'])  # Загружаем все сохраненные предсказания
     
     return features  # Возвращаем объединенный массив признаков
