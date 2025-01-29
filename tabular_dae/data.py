@@ -123,7 +123,7 @@ class DataFrameParser(object):
 
         for column in self.numerical_columns:
             # encoders[column] = StandardScaler().fit(dataframe[column])
-            encoders[column] = QuantileTransformer(output_distribution='normal', n_quantiles=int(0.1 * dataframe.shape[0])).fit(dataframe[column])
+            encoders[column] = QuantileTransformer(output_distribution='normal', n_quantiles=int(0.1 * dataframe.shape[0])).fit(dataframe[[column]])
 
         self._embeds = [int(min(600, 1.6 * card ** .5)) for card in self._cards]
         self.encoders = encoders
