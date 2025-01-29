@@ -151,8 +151,53 @@ def train(network_cfg_or_network,
     return network
 
 
+# def featurize(network, data, datatype_info, batch_size, device='cpu', output_dir='output_directory'):
+#     # Создаем директорию для хранения файлов, если она не существует
+#     output_path = Path(output_dir)
+#     output_path.mkdir(parents=True, exist_ok=True)
+
+#     ds = SingleDataset(data, datatype_info)
+#     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
+
+#     batch_file_paths = []  # Список для хранения путей к файлам батчей
+
+#     with torch.no_grad():
+#         for i, x in enumerate(dl):
+#             for k in x:
+#                 x[k] = x[k].to(device, non_blocking=True)
+
+#             batch_features = network.featurize(x)
+
+#             batch_features_np = batch_features.detach().cpu().numpy()
+
+#             # Создаем таблицу Arrow из массива NumPy
+#             table = pa.Table.from_arrays(
+#                 [pa.array(batch_features_np[:, j]) for j in range(batch_features_np.shape[1])],
+#                 names=[f'feature_{j}' for j in range(batch_features_np.shape[1])]
+#             )
+
+#             # Записываем данные в Parquet файл для текущего батча
+#             batch_file_path = output_path / f'batch_{i}.parquet'
+#             pq.write_table(table, batch_file_path)
+#             batch_file_paths.append(batch_file_path)  # Сохраняем путь к файлу
+
+#             del x
+#             del batch_features
+#             del batch_features_np
+#             del table
+
+#     # Объединяем все Parquet файлы в один
+#     combined_df = pd.concat([pq.read_table(file).to_pandas() for file in batch_file_paths], ignore_index=True)
+#     combined_file_path = output_path / 'combined.parquet'
+#     pq.write_table(pa.Table.from_pandas(combined_df), combined_file_path)
+
+#     gc.collect()
+
+#     if device == 'cuda':
+#         torch.cuda.empty_cache()
+
+#     return str(combined_file_path)  # Возвращаем путь к объединенному файлу
 def featurize(network, data, datatype_info, batch_size, device='cpu', output_dir='output_directory'):
-    # Создаем директорию для хранения файлов, если она не существует
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -167,33 +212,45 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_dir
                 x[k] = x[k].to(device, non_blocking=True)
 
             batch_features = network.featurize(x)
-
             batch_features_np = batch_features.detach().cpu().numpy()
 
-            # Создаем таблицу Arrow из массива NumPy
-            table = pa.Table.from_arrays(
-                [pa.array(batch_features_np[:, j]) for j in range(batch_features_np.shape[1])],
-                names=[f'feature_{j}' for j in range(batch_features_np.shape[1])]
-            )
+            # Оптимизация создания Arrow Table
+            table = pa.Table.from_pydict({
+                f'feature_{j}': batch_features_np[:, j] 
+                for j in range(batch_features_np.shape[1])
+            })
 
-            # Записываем данные в Parquet файл для текущего батча
+            # Запись в Parquet с компрессией
             batch_file_path = output_path / f'batch_{i}.parquet'
-            pq.write_table(table, batch_file_path)
-            batch_file_paths.append(batch_file_path)  # Сохраняем путь к файлу
+            pq.write_table(table, batch_file_path, compression='snappy')
+            batch_file_paths.append(batch_file_path)
 
-            del x
-            del batch_features
-            del batch_features_np
-            del table
+            # Явное освобождение памяти
+            del x, batch_features, batch_features_np, table
+            torch.cuda.empty_cache() if device == 'cuda' else None
 
-    # Объединяем все Parquet файлы в один
-    combined_df = pd.concat([pq.read_table(file).to_pandas() for file in batch_file_paths], ignore_index=True)
+    # Оптимизированное объединение Parquet файлов
+    def read_parquet_generator():
+        for file in batch_file_paths:
+            yield pq.read_table(file)
+    
+    combined_table = pa.concat_tables(read_parquet_generator())
     combined_file_path = output_path / 'combined.parquet'
-    pq.write_table(pa.Table.from_pandas(combined_df), combined_file_path)
+    
+    # Запись с компрессией и метаданными
+    pq.write_table(
+        combined_table, 
+        combined_file_path, 
+        compression='snappy',
+        use_dictionary=True,
+        write_statistics=True
+    )
+
+    # Очистка временных файлов
+    for file in batch_file_paths:
+        Path(file).unlink()
 
     gc.collect()
+    torch.cuda.empty_cache() if device == 'cuda' else None
 
-    if device == 'cuda':
-        torch.cuda.empty_cache()
-
-    return str(combined_file_path)  # Возвращаем путь к объединенному файлу
+    return str(combined_file_path)
