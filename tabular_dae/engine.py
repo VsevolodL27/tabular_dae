@@ -173,7 +173,7 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
 
                 # Добавляем новые данные в набор данных
                 current_shape = h5f['features'].shape[0]
-                h5f['features'].resize((current_shape + batch_features_np.shape[0],))  # Изменяем размер набора данных
+                h5f['features'].resize((current_shape + batch_features_np.shape[0], 37))  # Изменяем размер набора данных
                 h5f['features'][current_shape:] = batch_features_np  # Записываем новые данные
 
                 # Явное удаление объектов после их использования
