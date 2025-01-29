@@ -87,7 +87,7 @@ class DataFrameParser(object):
         self._cards = list()
         self.numerical_columns = list()
         self.need_freq_encoding = set()
-
+    
     def fit(self, dataframe):
         self._original_order = dataframe.columns.tolist()
         self._original_column_to_dtype = column_to_dtype = dataframe.dtypes.to_dict()
@@ -123,7 +123,8 @@ class DataFrameParser(object):
 
         for column in self.numerical_columns:
             # encoders[column] = StandardScaler().fit(dataframe[column])
-            encoders[column] = QuantileTransformer(output_distribution='normal', n_quantiles=int(0.1 * dataframe.shape[0])).fit(dataframe[[column]])
+            n_quantiles = min(int(0.1 * dataframe.shape[0]), 1000)
+            encoders[column] = QuantileTransformer(output_distribution='normal', n_quantiles=n_quantiles).fit(dataframe[[column]])
 
         self._embeds = [int(min(600, 1.6 * card ** .5)) for card in self._cards]
         self.encoders = encoders
