@@ -164,9 +164,9 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
 
             batch_features_np = batch_features.detach().cpu().numpy()
 
-            table = pa.Table.from_arrays([pa.array(batch_features_np[j, :]) for j in range(batch_features_np.shape[1])],
-                                          names=[f'feature_{j}' for j in range(batch_features_np.shape[1])])
-
+            table = pa.Table.from_arrays([pa.array(batch_features_np[:, j]) for j in range(batch_features_np.shape[1])],
+                              names=[f'feature_{j}' for j in range(batch_features_np.shape[1])])
+            
             if append_mode:
                 pq.write_table(table, output_file, append=True)
             else:
