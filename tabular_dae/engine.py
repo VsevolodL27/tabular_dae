@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-import gc
+import os
 from torch.utils.data import DataLoader
 from .network import AutoEncoder, SwapNoiseCorrupter
 from .data import SingleDataset
@@ -148,19 +148,34 @@ def train(network_cfg_or_network,
     return network
 
 
-def featurize(network, data, datatype_info, batch_size, device='cpu'):
+def featurize(network, data, datatype_info, batch_size, device='cpu', output_file='features.npy'):
     ds = SingleDataset(data, datatype_info)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
-    features = []
+
+    # Удаляем файл, если он уже существует
+    if os.path.exists(output_file):
+        os.remove(output_file)
+
     with torch.no_grad():
         for i, x in enumerate(dl):
-            for k in x: x[k] = x[k].to(device, non_blocking=True)
+            for k in x:
+                x[k] = x[k].to(device, non_blocking=True)
+
             batch_features = network.featurize(x)
-            features.append(batch_features.detach().cpu().numpy())
+
+            # Преобразуем в NumPy и сохраняем в файл
+            batch_features_np = batch_features.detach().cpu().numpy()
+            np.save(output_file, batch_features_np if i == 0 else np.load(output_file).append(batch_features_np))
+
+            # Явное удаление объектов после их использования
             del x
             del batch_features
-            gc.collect()
+
+            # Освобождение GPU памяти (если используется)
             if device == 'cuda':
                 torch.cuda.empty_cache()
-    features = np.vstack(features)
-    return features
+
+    # Загружаем все сохраненные предсказания и объединяем их
+    features = np.load(output_file)
+    
+    return features  # Возвращаем объединенный массив признаков
