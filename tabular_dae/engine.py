@@ -1,8 +1,8 @@
 import torch
 import numpy as np
 import gc
-import pandas as pd
-from fastparquet import write
+import pyarrow as pa
+import pyarrow.parquet as pq
 import os
 from torch.utils.data import DataLoader
 from .network import AutoEncoder, SwapNoiseCorrupter
@@ -157,7 +157,6 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
 
     # Проверяем, существует ли файл. Если нет, создаем новый.
     if os.path.exists(output_file):
-        # Если файл существует, просто добавляем новые данные
         append_mode = True
     else:
         append_mode = False
@@ -172,13 +171,17 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
             # Преобразуем в NumPy
             batch_features_np = batch_features.detach().cpu().numpy()
 
+            # Создаем таблицу Arrow из массива NumPy
+            table = pa.Table.from_arrays([pa.array(batch_features_np[:, j]) for j in range(batch_features_np.shape[1])],
+                                          names=[f'feature_{j}' for j in range(batch_features_np.shape[1])])
+
             # Записываем данные в Parquet файл
             if append_mode:
                 # Если файл существует, добавляем новые данные
-                write(output_file, batch_features_np, append=True)
+                pq.write_table(table, output_file, append=True)
             else:
                 # Если файл не существует, создаем его
-                write(output_file, batch_features_np)
+                pq.write_table(table, output_file)
 
             # Явное удаление объектов после их использования
             del x
