@@ -151,7 +151,7 @@ def train(network_cfg_or_network,
     return network
 
 
-def featurize(network, data, datatype_info, batch_size, device='cpu', output_file='features.parquet'):
+def featurize(network, data, datatype_info, batch_size, device='cuda', output_file='features.parquet'):
     ds = SingleDataset(data, datatype_info)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
 
@@ -165,9 +165,9 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
 
             batch_features = network.featurize(x)
 
-            # Преобразуем в NumPy и затем в DataFrame
+            # Преобразуем в NumPy и затем в DataFrame с явным указанием названий столбцов
             batch_features_np = batch_features.detach().cpu().numpy()
-            batch_features_df = pd.DataFrame(batch_features_np)
+            batch_features_df = pd.DataFrame(batch_features_np, columns=[f'feature_{j}' for j in range(batch_features_np.shape[1])])
 
             # Сохраняем DataFrame в формате Parquet с режимом добавления
             if os.path.exists(output_file):
@@ -181,11 +181,9 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
             del x
             del batch_features
 
-    gc.collect()
-
-    # Освобождение GPU памяти (если используется)
-    if device == 'cuda':
-        torch.cuda.empty_cache()
+            # Освобождение GPU памяти (если используется)
+            if device == 'cuda':
+                torch.cuda.empty_cache()
 
     # Загружаем все сохраненные предсказания и возвращаем их
     return pd.read_parquet(output_file)  # Возвращаем объединенный DataFrame признаков
