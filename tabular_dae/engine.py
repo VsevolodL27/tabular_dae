@@ -155,11 +155,12 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
     ds = SingleDataset(data, datatype_info)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
 
-    # Проверяем, существует ли файл. Если нет, создаем пустой DataFrame для хранения предсказаний.
+    # Проверяем, существует ли файл. Если нет, создаем новый.
     if os.path.exists(output_file):
-        features_df = pd.read_parquet(output_file)  # Загружаем существующие данные
+        # Если файл существует, просто добавляем новые данные
+        append_mode = True
     else:
-        features_df = pd.DataFrame()  # Создаем пустой DataFrame
+        append_mode = False
 
     with torch.no_grad():
         for i, x in enumerate(dl):
@@ -168,23 +169,25 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
 
             batch_features = network.featurize(x)
 
-            # Преобразуем в NumPy и затем в DataFrame с явным указанием названий столбцов
+            # Преобразуем в NumPy
             batch_features_np = batch_features.detach().cpu().numpy()
-            batch_features_df = pd.DataFrame(batch_features_np, columns=[f'feature_{j}' for j in range(batch_features_np.shape[1])])
 
-            # Добавляем новые данные к существующему DataFrame
-            features_df = pd.concat([features_df, batch_features_df], ignore_index=True)
+            # Записываем данные в Parquet файл
+            if append_mode:
+                # Если файл существует, добавляем новые данные
+                write(output_file, batch_features_np, append=True)
+            else:
+                # Если файл не существует, создаем его
+                write(output_file, batch_features_np)
 
             # Явное удаление объектов после их использования
             del x
             del batch_features
 
-            # Освобождение GPU памяти (если используется)
-            if device == 'cuda':
-                torch.cuda.empty_cache()
+    gc.collect()
 
-    # Сохраняем все данные в формате Parquet
-    write(output_file, features_df)
+    # Освобождение GPU памяти (если используется)
+    if device == 'cuda':
+        torch.cuda.empty_cache()
 
-    # Возвращаем объединенный DataFrame признаков
-    return features_df  # Возвращаем объединенный DataFrame признаков
+    return output_file  # Возвращаем ссылку на файл
