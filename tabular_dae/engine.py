@@ -149,7 +149,7 @@ def train(network_cfg_or_network,
     return network
 
 
-def featurize(network, data, datatype_info, batch_size, device='cuda', output_file='features.h5'):
+def featurize(network, data, datatype_info, batch_size, device='cpu', output_file='features.h5'):
     ds = SingleDataset(data, datatype_info)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
 
@@ -157,7 +157,9 @@ def featurize(network, data, datatype_info, batch_size, device='cuda', output_fi
     with h5py.File(output_file, 'a') as h5f:
         # Если набора данных еще нет, создаем его
         if 'features' not in h5f:
-            h5f.create_dataset('features', shape=(0,), maxshape=(None,), chunks=True)
+            # Создаем новый набор данных с начальной формой (0, 3072) 
+            initial_shape = (0, network.output_shape)  # Замените network.output_shape на нужное значение
+            h5f.create_dataset('features', shape=initial_shape, maxshape=(None, network.output_shape), chunks=True)
 
         with torch.no_grad():
             for i, x in enumerate(dl):
