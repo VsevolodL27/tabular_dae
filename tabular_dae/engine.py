@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import gc
 from torch.utils.data import DataLoader
 from .network import AutoEncoder, SwapNoiseCorrupter
 from .data import SingleDataset
@@ -147,14 +148,36 @@ def train(network_cfg_or_network,
     return network
 
 
-def featurize(network, data, datatype_info, batch_size, device='cpu'):
+def featurize(network, data, datatype_info, batch_size, device='cuda', output_file=None):
     ds = SingleDataset(data, datatype_info)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
-    features = []
+
+    features_shape = (0,)  # Начальная форма массива
+    first_batch = True
+
     with torch.no_grad():
         for i, x in enumerate(dl):
-            for k in x: x[k] = x[k].to(device, non_blocking=True)
-            batch_featurs = network.featurize(x)
-            features.append(batch_featurs.detach().cpu().numpy())
-    features = np.vstack(features)
-    return features
+            for k in x:
+                x[k] = x[k].to(device, non_blocking=True)
+
+            batch_features = network.featurize(x)
+
+            batch_features_np = batch_features.detach().cpu().numpy()
+            
+            if first_batch:
+                np.save(output_file, batch_features_np)
+                first_batch = False
+            else:
+                existing_features = np.load(output_file)
+                combined_features = np.vstack((existing_features, batch_features_np))
+                np.save(output_file, combined_features)
+
+            del x
+            del batch_features
+
+            gc.collect()
+
+            if device == 'cuda':
+                torch.cuda.empty_cache()
+
+    return output_file
