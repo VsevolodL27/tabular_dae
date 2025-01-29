@@ -1,5 +1,7 @@
 import torch
 import gc
+import pandas as pd
+from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 from torch.utils.data import DataLoader
@@ -149,11 +151,14 @@ def train(network_cfg_or_network,
     return network
 
 
-def featurize(network, data, datatype_info, batch_size, device='cpu', output_file='features.parquet'):
+def featurize(network, data, datatype_info, batch_size, device='cpu', output_dir='output_directory'):
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
     ds = SingleDataset(data, datatype_info)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
 
-    append_mode = False
+    batch_file_paths = [] 
 
     with torch.no_grad():
         for i, x in enumerate(dl):
@@ -164,23 +169,27 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
 
             batch_features_np = batch_features.detach().cpu().numpy()
 
-            table = pa.Table.from_arrays([pa.array(batch_features_np[:, j]) for j in range(batch_features_np.shape[1])],
-                              names=[f'feature_{j}' for j in range(batch_features_np.shape[1])])
-            
-            if append_mode:
-                pq.write_table(table, output_file, append=True)
-            else:
-                pq.write_table(table, output_file)
-                append_mode = True
+            table = pa.Table.from_arrays(
+                [pa.array(batch_features_np[:, j]) for j in range(batch_features_np.shape[1])],
+                names=[f'feature_{j}' for j in range(batch_features_np.shape[1])]
+            )
+
+            batch_file_path = output_path / f'batch_{i}.parquet'
+            pq.write_table(table, batch_file_path)
+            batch_file_paths.append(batch_file_path) 
 
             del x
             del batch_features
             del batch_features_np
             del table
 
+    combined_df = pd.concat([pq.ParquetFile(file).to_pandas() for file in batch_file_paths], ignore_index=True)
+    combined_file_path = output_path / 'combined.parquet'
+    pq.write_table(pa.Table.from_pandas(combined_df), combined_file_path)
+
     gc.collect()
 
     if device == 'cuda':
         torch.cuda.empty_cache()
 
-    return output_file
+    return str(combined_file_path)
