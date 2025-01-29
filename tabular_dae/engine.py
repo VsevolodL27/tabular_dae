@@ -1,7 +1,9 @@
 import torch
 import numpy as np
 import gc
-import h5py
+import pandas as pd
+from fastparquet import write
+import os
 from torch.utils.data import DataLoader
 from .network import AutoEncoder, SwapNoiseCorrupter
 from .data import SingleDataset
@@ -149,36 +151,35 @@ def train(network_cfg_or_network,
     return network
 
 
-def featurize(network, data, datatype_info, batch_size, device='cpu', output_file='features.h5'):
+def featurize(network, data, datatype_info, batch_size, device='cpu', output_file='features.parquet'):
     ds = SingleDataset(data, datatype_info)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
 
-    # Открываем файл HDF5 для добавления данных
-    with h5py.File(output_file, 'a') as h5f:
-        # Если набора данных еще нет, создаем его
-        if 'features' not in h5f:
-            # Создаем новый набор данных с начальной формой (0, 3072) 
-            initial_shape = (0, 3072)  # Замените network.output_shape на нужное значение
-            h5f.create_dataset('features', shape=initial_shape, maxshape=(None, 3072), chunks=True)
+    # Создаем пустой DataFrame для хранения предсказаний
+    features_df = pd.DataFrame()
 
-        with torch.no_grad():
-            for i, x in enumerate(dl):
-                for k in x:
-                    x[k] = x[k].to(device, non_blocking=True)
+    with torch.no_grad():
+        for i, x in enumerate(dl):
+            for k in x:
+                x[k] = x[k].to(device, non_blocking=True)
 
-                batch_features = network.featurize(x)
+            batch_features = network.featurize(x)
 
-                # Преобразуем в NumPy
-                batch_features_np = batch_features.detach().cpu().numpy()
+            # Преобразуем в NumPy и затем в DataFrame
+            batch_features_np = batch_features.detach().cpu().numpy()
+            batch_features_df = pd.DataFrame(batch_features_np)
 
-                # Добавляем новые данные в набор данных
-                current_shape = h5f['features'].shape[0]
-                h5f['features'].resize((current_shape + batch_features_np.shape[0], 3072))  # Изменяем размер набора данных
-                h5f['features'][current_shape:] = batch_features_np  # Записываем новые данные
+            # Сохраняем DataFrame в формате Parquet с режимом добавления
+            if os.path.exists(output_file):
+                # Если файл существует, добавляем новые данные
+                write(output_file, batch_features_df, append=True)
+            else:
+                # Если файл не существует, создаем его
+                write(output_file, batch_features_df)
 
-                # Явное удаление объектов после их использования
-                del x
-                del batch_features
+            # Явное удаление объектов после их использования
+            del x
+            del batch_features
 
     gc.collect()
 
@@ -187,6 +188,4 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
         torch.cuda.empty_cache()
 
     # Загружаем все сохраненные предсказания и возвращаем их
-    features = np.array(h5f['features'])  # Загружаем все сохраненные предсказания
-    
-    return features  # Возвращаем объединенный массив признаков
+    return pd.read_parquet(output_file)  # Возвращаем объединенный DataFrame признаков
