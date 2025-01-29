@@ -158,8 +158,8 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
         # Если набора данных еще нет, создаем его
         if 'features' not in h5f:
             # Создаем новый набор данных с начальной формой (0, 3072) 
-            initial_shape = (0, 37)  # Замените network.output_shape на нужное значение
-            h5f.create_dataset('features', shape=initial_shape, maxshape=(None, 37), chunks=True)
+            initial_shape = (0, 3072)  # Замените network.output_shape на нужное значение
+            h5f.create_dataset('features', shape=initial_shape, maxshape=(None, 3072), chunks=True)
 
         with torch.no_grad():
             for i, x in enumerate(dl):
@@ -173,7 +173,7 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
 
                 # Добавляем новые данные в набор данных
                 current_shape = h5f['features'].shape[0]
-                h5f['features'].resize((current_shape + batch_features_np.shape[0], 37))  # Изменяем размер набора данных
+                h5f['features'].resize((current_shape + batch_features_np.shape[0], 3072))  # Изменяем размер набора данных
                 h5f['features'][current_shape:] = batch_features_np  # Записываем новые данные
 
                 # Явное удаление объектов после их использования
