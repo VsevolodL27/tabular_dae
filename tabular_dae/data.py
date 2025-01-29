@@ -133,7 +133,7 @@ class DataFrameParser(object):
         df = dataframe[self._column_order].copy()
         for column, encoder in self.encoders.items():
             if column in self.numerical_columns:
-                df[column] = encoder.transform(df[column])
+                df[column] = encoder.transform(df[[column]])
             else:
                 df[column] = encoder.transform(df[column].astype(str))
         return df.values
