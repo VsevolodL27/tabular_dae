@@ -1,9 +1,7 @@
 import torch
-import numpy as np
 import gc
 import pyarrow as pa
 import pyarrow.parquet as pq
-import os
 from torch.utils.data import DataLoader
 from .network import AutoEncoder, SwapNoiseCorrupter
 from .data import SingleDataset
@@ -155,12 +153,6 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
     ds = SingleDataset(data, datatype_info)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
 
-    # Проверяем, существует ли файл. Если нет, создаем новый.
-    if os.path.exists(output_file):
-        append_mode = True
-    else:
-        append_mode = False
-
     with torch.no_grad():
         for i, x in enumerate(dl):
             for k in x:
@@ -176,16 +168,13 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
                                           names=[f'feature_{j}' for j in range(batch_features_np.shape[1])])
 
             # Записываем данные в Parquet файл
-            if append_mode:
-                # Если файл существует, добавляем новые данные
-                pq.write_table(table, output_file, append=True)
-            else:
-                # Если файл не существует, создаем его
-                pq.write_table(table, output_file)
-
+            pq.write_table(table, output_file)
+            
             # Явное удаление объектов после их использования
             del x
             del batch_features
+            del batch_features_np
+            del table
 
     gc.collect()
 
