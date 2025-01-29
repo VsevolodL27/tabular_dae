@@ -1,9 +1,11 @@
 import numpy as np
 from collections import Counter
 from torch.utils.data import Dataset
+from sklearn.preprocessing import QuantileTransformer
 
 
-__all__ = ['StandardScaler', 'LabelEncoder', 'FreqLabelEncoder', 'DataFrameParser', 'SingleDataset']
+# __all__ = ['StandardScaler', 'LabelEncoder', 'FreqLabelEncoder', 'DataFrameParser', 'SingleDataset']
+__all__ = ['QuantileTransformer', 'LabelEncoder', 'FreqLabelEncoder', 'DataFrameParser', 'SingleDataset']
 
 
 class StandardScaler(object):
@@ -120,7 +122,8 @@ class DataFrameParser(object):
             self._cards.append(len(encoders[column]))
 
         for column in self.numerical_columns:
-            encoders[column] = StandardScaler().fit(dataframe[column])
+            # encoders[column] = StandardScaler().fit(dataframe[column])
+            QuantileTransformer(output_distribution='normal', n_quantiles=0.1 * dataframe.shape[0])
 
         self._embeds = [int(min(600, 1.6 * card ** .5)) for card in self._cards]
         self.encoders = encoders
