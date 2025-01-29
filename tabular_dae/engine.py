@@ -153,6 +153,8 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
     ds = SingleDataset(data, datatype_info)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
 
+    append_mode = False
+
     with torch.no_grad():
         for i, x in enumerate(dl):
             for k in x:
@@ -160,17 +162,17 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
 
             batch_features = network.featurize(x)
 
-            # Преобразуем в NumPy
             batch_features_np = batch_features.detach().cpu().numpy()
 
-            # Создаем таблицу Arrow из массива NumPy
-            table = pa.Table.from_arrays([pa.array(batch_features_np[:, j]) for j in range(batch_features_np.shape[1])],
+            table = pa.Table.from_arrays([pa.array(batch_features_np[j, :]) for j in range(batch_features_np.shape[0])],
                                           names=[f'feature_{j}' for j in range(batch_features_np.shape[1])])
 
-            # Записываем данные в Parquet файл
-            pq.write_table(table, output_file)
-            
-            # Явное удаление объектов после их использования
+            if append_mode:
+                pq.write_table(table, output_file, append=True)
+            else:
+                pq.write_table(table, output_file)
+                append_mode = True
+
             del x
             del batch_features
             del batch_features_np
@@ -178,8 +180,7 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
 
     gc.collect()
 
-    # Освобождение GPU памяти (если используется)
     if device == 'cuda':
         torch.cuda.empty_cache()
 
-    return output_file  # Возвращаем ссылку на файл
+    return output_file
