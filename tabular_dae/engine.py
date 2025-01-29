@@ -151,12 +151,15 @@ def train(network_cfg_or_network,
     return network
 
 
-def featurize(network, data, datatype_info, batch_size, device='cuda', output_file='features.parquet'):
+def featurize(network, data, datatype_info, batch_size, device='cpu', output_file='features.parquet'):
     ds = SingleDataset(data, datatype_info)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
 
-    # Создаем пустой DataFrame для хранения предсказаний
-    features_df = pd.DataFrame()
+    # Проверяем, существует ли файл. Если нет, создаем пустой DataFrame для хранения предсказаний.
+    if os.path.exists(output_file):
+        features_df = pd.read_parquet(output_file)  # Загружаем существующие данные
+    else:
+        features_df = pd.DataFrame()  # Создаем пустой DataFrame
 
     with torch.no_grad():
         for i, x in enumerate(dl):
@@ -169,13 +172,8 @@ def featurize(network, data, datatype_info, batch_size, device='cuda', output_fi
             batch_features_np = batch_features.detach().cpu().numpy()
             batch_features_df = pd.DataFrame(batch_features_np, columns=[f'feature_{j}' for j in range(batch_features_np.shape[1])])
 
-            # Сохраняем DataFrame в формате Parquet с режимом добавления
-            if os.path.exists(output_file):
-                # Если файл существует, добавляем новые данные
-                write(output_file, batch_features_df, append=True)
-            else:
-                # Если файл не существует, создаем его
-                write(output_file, batch_features_df)
+            # Добавляем новые данные к существующему DataFrame
+            features_df = pd.concat([features_df, batch_features_df], ignore_index=True)
 
             # Явное удаление объектов после их использования
             del x
@@ -185,5 +183,8 @@ def featurize(network, data, datatype_info, batch_size, device='cuda', output_fi
             if device == 'cuda':
                 torch.cuda.empty_cache()
 
-    # Загружаем все сохраненные предсказания и возвращаем их
-    return pd.read_parquet(output_file)  # Возвращаем объединенный DataFrame признаков
+    # Сохраняем все данные в формате Parquet
+    write(output_file, features_df)
+
+    # Возвращаем объединенный DataFrame признаков
+    return features_df  # Возвращаем объединенный DataFrame признаков
