@@ -155,8 +155,8 @@ def featurize(network, data, datatype_info, batch_size, device='cpu'):
     with torch.no_grad():
         for i, x in enumerate(dl):
             for k in x: x[k] = x[k].to(device, non_blocking=True)
-            batch_featurs = network.featurize(x)
-            features.append(batch_featurs.detach().cpu().numpy())
+            batch_features = network.featurize(x)
+            features.append(batch_features.detach().cpu().numpy())
             del x
             del batch_features
             gc.collect()
