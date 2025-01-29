@@ -163,9 +163,16 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
 
             batch_features = network.featurize(x)
 
-            # Преобразуем в NumPy и сохраняем в файл
+            # Преобразуем в NumPy
             batch_features_np = batch_features.detach().cpu().numpy()
-            np.save(output_file, batch_features_np if i == 0 else np.load(output_file).append(batch_features_np))
+
+            # Сохраняем или добавляем данные в файл
+            if i == 0:
+                np.save(output_file, batch_features_np)  # Создаем новый файл для первого батча
+            else:
+                existing_features = np.load(output_file)
+                combined_features = np.vstack((existing_features, batch_features_np))
+                np.save(output_file, combined_features)  # Перезаписываем файл с объединенными данными
 
             # Явное удаление объектов после их использования
             del x
@@ -175,7 +182,7 @@ def featurize(network, data, datatype_info, batch_size, device='cpu', output_fil
             if device == 'cuda':
                 torch.cuda.empty_cache()
 
-    # Загружаем все сохраненные предсказания и объединяем их
+    # Загружаем все сохраненные предсказания и возвращаем их
     features = np.load(output_file)
     
     return features  # Возвращаем объединенный массив признаков
